@@ -1,0 +1,92 @@
+import java.util.Properties
+import javax.mail._
+import javax.mail.internet._
+import javax.activation.{DataHandler, DataSource, FileDataSource}
+import java.nio.file.{Files, Paths}
+
+  object new_mail {
+  def main(args: Array[String]): Unit = {
+
+    println(smtpHost, smtpPort, mailFrom, mailPassword, mailTo, mailSubject, htmlFilePath, htmlTable, attachmentPath)
+    mail(smtpHost, smtpPort, mailFrom, mailPassword, mailTo, mailSubject, htmlFilePath, htmlTable, attachmentPath)
+
+  }
+
+}
+
+// Define a helper function to read the HTML file content into a string
+  def readHtmlFile(filePath: String): String = {
+    new String(Files.readAllBytes(Paths.get(filePath)), "UTF-8")
+  }
+
+  // Define a helper function to replace placeholders in the HTML content
+  def replacePlaceholders(htmlContent: String, placeholders: Map[String, String]): String = {
+    placeholders.foldLeft(htmlContent) { case (content, (placeholder, value)) =>
+      content.replace(s"$$${placeholder}", value)
+    }
+  }
+
+  // Define the mail function with authentication
+  def mail(smtpHost: String, smtpPort: String, mailFrom: String, mailPassword: String, mailTo: String,
+           mailSubject: String, htmlFilePath: String, placeholders: Map[String, String], attachmentPath: String): Unit = {
+    try {
+      // Set up mail server properties
+      val properties = new Properties()
+      properties.put("mail.smtp.host", smtpHost)
+      properties.put("mail.smtp.port", smtpPort)
+      properties.put("mail.smtp.auth", "true") // Enable authentication
+      properties.put("mail.smtp.starttls.enable", "true") // Enable TLS if required
+      properties.put("mail.smtp.ssl.enable", "false") // Enable SSL if required
+
+      // Get the Session object with authentication
+      val session = Session.getInstance(properties, new javax.mail.Authenticator() {
+        protected override def getPasswordAuthentication: PasswordAuthentication = {
+          new PasswordAuthentication(mailFrom, mailPassword)
+        }
+      })
+
+      // Create a default MimeMessage object
+      val message = new MimeMessage(session)
+
+      // Set From: header field
+      message.setFrom(new InternetAddress(mailFrom))
+
+      // Set To: header field
+      message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(mailTo).asInstanceOf[Array[Address]])
+
+      // Set Subject: header field
+      message.setSubject(mailSubject)
+
+      // Read the HTML file content and replace placeholders
+      val rawHtmlContent = readHtmlFile(htmlFilePath)
+      val mailBody = replacePlaceholders(rawHtmlContent, placeholders)
+
+      // Create the message part
+      val bodyPart = new MimeBodyPart()
+      bodyPart.setContent(mailBody, "text/html; charset=utf-8")
+
+      // Create a multipart message
+      val multipart = new MimeMultipart()
+      multipart.addBodyPart(bodyPart)
+
+      // Add the attachment part if the attachment path is not empty
+      if (attachmentPath.nonEmpty) {
+        val attachmentPart = new MimeBodyPart()
+        val source: DataSource = new FileDataSource(attachmentPath)
+        attachmentPart.setDataHandler(new DataHandler(source))
+        attachmentPart.setFileName(new java.io.File(attachmentPath).getName)
+        multipart.addBodyPart(attachmentPart)
+      }
+
+      // Set the complete message parts
+      message.setContent(multipart)
+
+      // Send the message
+      Transport.send(message)
+
+      println("Sent message successfully....")
+    } catch {
+      case e: MessagingException =>
+        e.printStackTrace()
+    }
+  }
